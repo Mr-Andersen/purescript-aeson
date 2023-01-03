@@ -87,8 +87,6 @@ module Aeson
 
   , toStringifiedNumbersJson
   , module DataArgonautReexport
-  , class EncodeTupleAux
-  , tupleToArray
   , class DecodeTupleAux
   , tupleFromArray
   , tupleLength
@@ -627,11 +625,12 @@ else instance
         <*> lmap (AtIndex $ ixCounter + 1) (decodeAeson b)
       _, _, _ -> Left $ TypeMismatch $ "Tuple2"
 
-instance (DecodeTupleAux (Tuple a b)) => DecodeAeson (Tuple a b) where
-  -- Decodes nested tuple of arbitrary size, (like Boolean /\ Boolean /\ Boolean /\ ...)
-  -- from flat JSON array (like [true, true, true, ...])
-  -- Fails if lengths of tuple and array are different
-  decodeAeson = caseAesonArray (Left $ TypeMismatch "Tuple") $ tupleFromArray 0
+instance (DecodeAeson a, DecodeAeson b) => DecodeAeson (Tuple a b) where
+  decodeAeson =
+    let err = Left $ TypeMismatch "Pair"
+     in caseAesonArray err case _ of
+        [x, y] -> Tuple <$> decodeAeson x <*> decodeAeson y
+        _ -> err
 
 ---
 
@@ -802,30 +801,8 @@ instance
 instance EncodeAeson a => EncodeAeson (Array a) where
   encodeAeson = fromArray <<< map encodeAeson
 
----
-
-class EncodeTupleAux a where
-  tupleToArray :: a -> Array Aeson
-
-instance
-  ( EncodeAeson a
-  , EncodeTupleAux (Tuple b c)
-  ) =>
-  EncodeTupleAux (Tuple a (Tuple b c)) where
-  tupleToArray (Tuple a bc) = cons (encodeAeson a) $ tupleToArray bc
-else instance
-  ( EncodeAeson a
-  , EncodeAeson b
-  ) =>
-  EncodeTupleAux (Tuple a b) where
-  tupleToArray (Tuple a b) = [ encodeAeson a, encodeAeson b ]
-
-instance EncodeTupleAux (Tuple a b) => EncodeAeson (Tuple a b) where
-  -- Encodes nested tuple of arbitrary size, (like Boolean /\ Boolean /\ Boolean /\ ...)
-  -- to flat JSON array (like [true, true, true, ...])
-  encodeAeson = encodeAeson <<< tupleToArray
-
----
+instance (EncodeAeson a, EncodeAeson b) => EncodeAeson (Tuple a b) where
+  encodeAeson (Tuple a b) = encodeAeson [encodeAeson a, encodeAeson b]
 
 instance EncodeAeson a => EncodeAeson (L.List a) where
   encodeAeson = encodeAeson <<< fromFoldable
